@@ -1,0 +1,48 @@
+load('lab2data.mat')
+
+rets=(prices(2:end,:)./prices(1:end-1,:))-1;
+mu=mean(rets);
+Q=cov(rets);
+
+sp500ret = (sp500price(2:end,:)./sp500price(1:end-1,:))-1;
+sp500mu = mean(sp500ret);
+
+function [x_optimal, val] = robustMVO(Q, mu, lb, targetRet, alpha)
+
+    n = size(Q,1); 
+    epilson = chi2cdf((1-alpha),n)
+    theta = diag(diag(Q))
+
+    clear model
+
+    % Quadratic term in objective function. extra zeros inserted for binary
+    % variables
+    model.Q = sparse([Q zeros(n,1);
+        zeros(1,n+1)]);
+    % linear term in objective function
+    model.obj = [zeros(1,n+1)];
+    % target return constraint, budget constraint, and lower and upper
+    % bound constraints
+    model.A = sparse([-1*mu' epilson;
+        ones(1,n) 0]); %-1 as no short selling
+    
+    % RHS of contraints
+    model.rhs = [-1*targetRet; 1];
+    % Define equality and inequalities for each constraint
+    sense = ['<','='];
+    model.sense = sense;
+    % Variable type: first half is continuous, second half binary
+%     model.vtype = [repmat('C', 1, n) repmat('B', 1, n);];
+    
+    model.quadcon(1).Qc = sparse([theta zeros(n,1);
+        zeros(1,n) -1])
+
+
+    % Save model in local file
+    gurobi_write(model, 'qp.lp'); 
+
+    % Obtain results
+    results = gurobi(model)
+    
+    % Retrieve x optimal from results
+    x_optimal = results.x(1:(size(results.x,1)/2));
